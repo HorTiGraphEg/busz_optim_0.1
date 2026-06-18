@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Busz Optimalizáló</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js">
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    try { map.invalidateSize(true); } catch(e) {}
+  }, 500);
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    setTimeout(() => {
+      try { map.invalidateSize(true); } catch(e) {}
+    }, 200);
+  }
+});
+
+</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap');
+
+:root {
+  --bg:       #111318;
+  --surf:     #181b24;
+  --card:     #1e2230;
+  --border:   #2a2f45;
+  --acc:      #5b8dee;
+  --acc2:     #f0a500;
+  --green:    #3ec98a;
+  --red:      #e85555;
+  --purple:   #a07ef0;
+  --text:     #e4e7f0;
+  --muted:    #636882;
+  --mono:     'JetBrains Mono', monospace;
+  --sans:     'Inter', sans-serif;
+  --r:        10px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+/* ── HEADER ── */
+.top-bar {
+  background: var(--surf);
+  border-bottom: 1px solid var(--border);
+  padding: .9rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  flex-wrap: wrap;
+}
+.top-bar .logo {
+  font-family: var(--mono);
+  font-size: .8rem;
+  font-weight: 700;
+  letter-spacing: .12em;
+  color: var(--acc);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.step-pills {
+  display: flex;
+  gap: .3rem;
+  flex-wrap: wrap;
+}
+.pill {
+  font-size: .72rem;
+  font-weight: 600;
+  padding: .3rem .75rem;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  cursor: default;
+  transition: all .2s;
+  white-space: nowrap;
+}
+.pill.active { background: var(--acc); color: #fff; border-color: var(--acc); }
+.pill.done   { background: transparent; color: var(--green); border-color: var(--green); }
+
+/* ── LAYOUT ── */
+.app-body {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  height: calc(100vh - 57px);
+  overflow: hidden;
+}
+@media(max-width:700px){
+  .app-body { grid-template-columns: 1fr; grid-template-rows: 50vh 1fr; }
+}
+
+/* ── PANEL (LEFT) ── */
+.panel {
+  background: var(--surf);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.panel-section { display: none; flex-direction: column; gap: .8rem; }
+.panel-section.visible { display: flex; }
+
+.section-title {
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-bottom: .4rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.instr {
+  font-size: .82rem;
+  color: var(--muted);
+  line-height: 1.5;
+  padding: .6rem .8rem;
+  background: var(--card);
+  border-radius: var(--r);
+  border-left: 3px solid var(--acc);
+}
+.instr.orange { border-left-color: var(--acc2); }
+.instr.green  { border-left-color: var(--green); }
+
+/* ── Point list ── */
+.point-list { display: flex; flex-direction: column; gap: .4rem; }
+.point-item {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .45rem .6rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: .82rem;
+}
+.point-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot-work  { background: var(--green); }
+.dot-depoA { background: var(--acc); }
+.dot-depoB { background: var(--acc2); }
+.dot-stop  { background: var(--purple); }
+.point-item .pname { flex: 1; font-weight: 500; }
+.point-item .pdist { font-family: var(--mono); font-size: .72rem; color: var(--muted); }
+.point-item .pdel  { background: none; border: none; color: var(--muted); cursor: pointer; font-size: .9rem; padding: 0 .2rem; transition: color .15s; }
+.point-item .pdel:hover { color: var(--red); }
+
+/* ── Stop name input ── */
+.stop-input-row {
+  display: flex;
+  gap: .5rem;
+  align-items: center;
+}
+.stop-input-row input {
+  flex: 1;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: .85rem;
+  padding: .45rem .75rem;
+  outline: none;
+}
+.stop-input-row input:focus { border-color: var(--acc); }
+
+/* ── Utas inputs ── */
+.utas-row {
+  display: flex;
+  gap: .4rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.utas-row input {
+  flex: 1; min-width: 100px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: .82rem;
+  padding: .4rem .65rem;
+  outline: none;
+}
+.utas-row input:focus { border-color: var(--acc); }
+.utas-row select {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: .82rem;
+  padding: .4rem .5rem;
+  outline: none;
+  flex: 1; min-width: 100px;
+}
+.utas-row select:focus { border-color: var(--acc); }
+
+/* ── Buttons ── */
+btn { display: inline-block; }
+button {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: .82rem;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  padding: .45rem 1rem;
+  transition: all .15s;
+}
+.btn-p  { background: var(--acc);  color: #fff; }
+.btn-p:hover  { filter: brightness(1.15); }
+.btn-s  { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+.btn-s:hover  { border-color: var(--acc); color: var(--acc); }
+.btn-g  { background: var(--green); color: #0f1117; }
+.btn-g:hover  { filter: brightness(1.1); }
+.btn-row { display: flex; gap: .5rem; flex-wrap: wrap; }
+
+/* ── Error / info ── */
+.err { color: var(--red); font-size: .78rem; display: none; }
+.err.show { display: block; }
+
+/* ── MAP ── */
+#map {
+  width: 100%;
+  height: 100%;
+  background: #1a1e2e;
+}
+.leaflet-container { background: #1a1e2e; }
+
+/* ── RESULT panel ── */
+.result-scroll {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: .7rem;
+}
+.rtable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .8rem;
+}
+.rtable th {
+  text-align: left;
+  padding: .45rem .7rem;
+  background: var(--card);
+  color: var(--muted);
+  font-size: .68rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+}
+.rtable td {
+  padding: .45rem .7rem;
+  border-bottom: 1px solid var(--border);
+}
+.rtable tr:last-child td { border-bottom: none; }
+.bbadge {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: .8rem;
+  padding: .15rem .45rem;
+  border-radius: 4px;
+}
+.bbadge-A { background: rgba(91,141,238,.18); color: var(--acc); }
+.bbadge-B { background: rgba(240,165,0,.18);  color: var(--acc2); }
+
+.route-vis {
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: .72rem;
+  margin: .4rem 0;
+}
+.rs { padding: .2rem .5rem; border-radius: 4px; border: 1px solid var(--border); background: var(--card); }
+.rs-work  { border-color: var(--green);  color: var(--green); }
+.rs-depo  { border-color: var(--acc);    color: var(--acc); }
+.rs-depoB { border-color: var(--acc2);   color: var(--acc2); }
+.rs-arr   { color: var(--muted); }
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px,1fr));
+  gap: .5rem;
+}
+.stat-box {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .6rem .8rem;
+}
+.stat-box .sl { font-size: .65rem; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; margin-bottom: .2rem; }
+.stat-box .sv { font-family: var(--mono); font-size: .95rem; font-weight: 700; }
+
+.stop-detail {
+  display: flex;
+  align-items: flex-start;
+  gap: .5rem;
+  padding: .4rem .6rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: .78rem;
+  margin-bottom: .3rem;
+}
+.stop-detail .sd-name { font-weight: 600; margin-bottom: .15rem; }
+.stop-detail .sd-meta { color: var(--muted); font-family: var(--mono); font-size: .7rem; }
+.stop-detail .sd-pax  { color: var(--text); margin-top: .15rem; }
+
+/* ── Spinner ── */
+.spin {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--acc);
+  border-radius: 50%;
+  animation: sp .6s linear infinite;
+  vertical-align: middle;
+}
+@keyframes sp { to { transform: rotate(360deg); } }
+
+/* ── Map mode label ── */
+.map-mode-badge {
+  position: absolute;
+  top: 10px; right: 10px;
+  z-index: 1000;
+  background: var(--surf);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .4rem .8rem;
+  font-size: .75rem;
+  font-weight: 600;
+  color: var(--text);
+  pointer-events: none;
+}
+
+/* ── Print ── */
+@media print {
+  .top-bar, .panel > *:not(.panel-section#sec-result) { display: none !important; }
+  .app-body { grid-template-columns: 1fr; height: auto; }
+  #map { display: none; }
+  .panel { border: none; overflow: visible; }
+  body { background: #fff; color: #000; }
+  .card, .stat-box, .stop-detail { background: #f5f5f5; border-color: #ccc; }
+  .bbadge-A { background: #dce8ff; color: #1a4fa0; }
+  .bbadge-B { background: #fff3dc; color: #a06010; }
+}
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="top-bar no-print">
+  <div class="logo">🚌 Busz Optimalizáló</div>
+  <div class="step-pills">
+    <div class="pill active" id="pill1">1 · Munkahely</div>
+    <div class="pill" id="pill2">2 · Depók</div>
+    <div class="pill" id="pill3">3 · Megállók</div>
+    <div class="pill" id="pill4">4 · Utasok</div>
+    <div class="pill" id="pill5">5 · Eredmény</div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="app-body">
+
+  <!-- LEFT PANEL -->
+  <div class="panel">
+
+    <!-- STEP 1: Munkahely -->
+    <div class="panel-section visible" id="sec1">
+      <div class="section-title">Munkahely helye</div>
+      <div class="instr">Kattints a térképen a <strong>munkahely</strong> helyére. Ez lesz az úticél — ide érnek be a buszok.</div>
+      <div class="point-list" id="workList"></div>
+      <div class="err" id="err1">Kattints a munkahelyre a térképen!</div>
+      <div class="btn-row">
+        <button class="btn-p" onclick="step1Next()">Tovább: Depók →</button>
+      </div>
+    </div>
+
+    <!-- STEP 2: Depók -->
+    <div class="panel-section" id="sec2">
+      <div class="section-title">Busz depók</div>
+      <div class="instr orange">Kattints az <strong>A busz</strong> depójának helyére a térképen.</div>
+      <div class="instr orange" id="instrB" style="display:none">Most kattints a <strong>B busz</strong> depójának helyére.</div>
+      <div class="point-list" id="depoList"></div>
+      <div class="err" id="err2">Mindkét busz depóját jelöld meg!</div>
+      <div class="btn-row">
+        <button class="btn-p" onclick="step2Next()">Tovább: Megállók →</button>
+        <button class="btn-s" onclick="goStep(1)">← Vissza</button>
+      </div>
+    </div>
+
+    <!-- STEP 3: Megállók -->
+    <div class="panel-section" id="sec3">
+      <div class="section-title">Buszmegállók (max 8)</div>
+      <div class="instr green">Kattints a térképen egy megálló helyére, add meg a nevét, majd nyomd meg a <strong>+</strong> gombot.</div>
+      <div class="stop-input-row">
+        <input type="text" id="stopNameInput" placeholder="Megálló neve..." maxlength="40">
+        <button class="btn-p" onclick="addPendingStop()">+</button>
+      </div>
+      <div class="point-list" id="stopList"></div>
+      <div class="err" id="err3">Legalább 1 megállót adj meg!</div>
+      <div class="btn-row">
+        <button class="btn-p" onclick="step3Next()">Tovább: Utasok →</button>
+        <button class="btn-s" onclick="goStep(2)">← Vissza</button>
+      </div>
+    </div>
+
+    <!-- STEP 4: Utasok -->
+    <div class="panel-section" id="sec4">
+      <div class="section-title">Utasok (max 16)</div>
+      <div class="instr">Add meg minden utas nevét és felszállási megállóját.</div>
+      <div id="utasContainer"></div>
+      <div class="btn-row" style="margin-top:.3rem">
+        <button class="btn-s" onclick="addUtasRow()">+ Utas</button>
+      </div>
+      <div class="err" id="err4">Legalább 1 utast adj meg!</div>
+      <div class="btn-row" style="margin-top:.5rem">
+        <button class="btn-p" id="optBtn" onclick="runOptimize()">
+          <span id="optSpin" style="display:none" class="spin"></span> Optimalizálás →
+        </button>
+        <button class="btn-s" onclick="goStep(3)">← Vissza</button>
+      </div>
+    </div>
+
+    <!-- STEP 5: Eredmény -->
+    <div class="panel-section" id="sec-result">
+      <div class="section-title">Optimális beosztás</div>
+      <div class="result-scroll" id="resultScroll"></div>
+      <div class="btn-row" style="margin-top:.5rem">
+        <button class="btn-g" onclick="window.print()">🖨 Nyomtatás</button>
+        <button class="btn-s" onclick="location.reload()">↺ Újra</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- MAP -->
+  <div style="position:relative">
+    <div id="map"></div>
+    <div class="map-mode-badge" id="mapBadge">Kattints a munkahelyre</div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════
+//  CONFIG
+// ════════════════════════════════════
+const SPEED_MS  = 50000 / 3600;  // 50 km/h → m/s
+const STOP_SEC  = 40;
+const MAX_CAP   = 8;
+const MAX_UTAS  = 16;
+const MAX_STOPS = 8;
+
+// ════════════════════════════════════
+//  STATE
+// ════════════════════════════════════
+let step = 1;
+let workplace = null;   // {lat,lng}
+let depoA     = null;
+let depoB     = null;
+let stops     = [];     // [{nev, lat, lng, distM}]
+let utasok    = [];     // [{nev, stopIdx}]
+let result    = [];     // 0=A,1=B per utas
+let pendingStop = null; // clicked latlng awaiting name
+
+// Distances from OSRM (meters)
+let distDepoA = 0, distDepoB = 0;
+
+// Leaflet markers
+let mkWork = null, mkDepoA = null, mkDepoB = null;
+let mkStops = [];
+let mkPending = null;
+
+// ════════════════════════════════════
+//  MAP SETUP
+// ════════════════════════════════════
+const map = L.map('map', {zoomControl: true}).setView([47.5, 19.05], 11);
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '© OpenStreetMap © CARTO',
+  maxZoom: 19
+}).addTo(map);
+
+function makeIcon(color, label) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="
+      background:${color};
+      color:#fff;
+      font-family:'Inter',sans-serif;
+      font-size:11px;
+      font-weight:700;
+      width:32px;height:32px;
+      border-radius:50% 50% 50% 0;
+      transform:rotate(-45deg);
+      display:flex;align-items:center;justify-content:center;
+      box-shadow:0 2px 8px rgba(0,0,0,.5);
+      border:2px solid rgba(255,255,255,.3);
+    "><span style="transform:rotate(45deg)">${label}</span></div>`,
+    iconSize: [32,32],
+    iconAnchor: [16,32],
+    popupAnchor: [0,-34]
+  });
+}
+
+const iconWork  = makeIcon('#3ec98a','🏭');
+const iconDepoA = makeIcon('#5b8dee','A');
+const iconDepoB = makeIcon('#f0a500','B');
+const iconStop  = makeIcon('#a07ef0','🚏');
+const iconPend  = makeIcon('#636882','?');
+
+map.on('click', onMapClick);
+
+function onMapClick(e) {
+  const {lat, lng} = e.latlng;
+  if (step === 1) placeWorkplace(lat, lng);
+  else if (step === 2) placeDepo(lat, lng);
+  else if (step === 3) placePendingStop(lat, lng);
+}
+
+// ════════════════════════════════════
+//  STEP NAVIGATION
+// ════════════════════════════════════
+function goStep(n) {
+  step = n;
+  for (let i=1;i<=5;i++) {
+    const id = i===5 ? 'sec-result' : 'sec'+i;
+    const s = document.getElementById(id);
+    if (s) s.classList.toggle('visible', i===n);
+    const p = document.getElementById('pill'+i);
+    if (p) {
+      p.classList.toggle('active', i===n);
+      p.classList.toggle('done', i<n);
+    }
+  }
+  // Update map badge
+  const badges = ['','Kattints a munkahelyre','Kattints az A busz depójára','Kattints egy megállóra','—','—'];
+  document.getElementById('mapBadge').textContent = badges[n]||'';
+}
+
+// ════════════════════════════════════
+//  STEP 1 — WORKPLACE
+// ════════════════════════════════════
+function placeWorkplace(lat, lng) {
+  if (step !== 1) return;
+  workplace = {lat, lng};
+  if (mkWork) mkWork.remove();
+  mkWork = L.marker([lat,lng], {icon: iconWork})
+    .addTo(map).bindPopup('Munkahely').openPopup();
+  renderWorkList();
+}
+
+function renderWorkList() {
+  const el = document.getElementById('workList');
+  if (!workplace) { el.innerHTML=''; return; }
+  el.innerHTML = `<div class="point-item">
+    <span class="point-dot dot-work"></span>
+    <span class="pname">Munkahely</span>
+    <span class="pdist">${workplace.lat.toFixed(5)}, ${workplace.lng.toFixed(5)}</span>
+    <button class="pdel" onclick="removeWorkplace()">✕</button>
+  </div>`;
+}
+
+function removeWorkplace() {
+  workplace = null;
+  if (mkWork) { mkWork.remove(); mkWork = null; }
+  renderWorkList();
+}
+
+function step1Next() {
+  const err = document.getElementById('err1');
+  if (!workplace) { err.classList.add('show'); return; }
+  err.classList.remove('show');
+  goStep(2);
+}
+
+// ════════════════════════════════════
+//  STEP 2 — DEPÓK
+// ════════════════════════════════════
+function placeDepo(lat, lng) {
+  if (step !== 2) return;
+  if (!depoA) {
+    depoA = {lat, lng};
+    mkDepoA = L.marker([lat,lng],{icon:iconDepoA}).addTo(map).bindPopup('A busz depó');
+    document.getElementById('instrB').style.display = 'flex';
+  } else if (!depoB) {
+    depoB = {lat, lng};
+    mkDepoB = L.marker([lat,lng],{icon:iconDepoB}).addTo(map).bindPopup('B busz depó');
+  }
+  renderDepoList();
+}
+
+function renderDepoList() {
+  const el = document.getElementById('depoList');
+  let html = '';
+  if (depoA) html += `<div class="point-item">
+    <span class="point-dot dot-depoA"></span>
+    <span class="pname">A busz depó</span>
+    <span class="pdist">${depoA.lat.toFixed(4)}, ${depoA.lng.toFixed(4)}</span>
+    <button class="pdel" onclick="removeDepo('A')">✕</button>
+  </div>`;
+  if (depoB) html += `<div class="point-item">
+    <span class="point-dot dot-depoB"></span>
+    <span class="pname">B busz depó</span>
+    <span class="pdist">${depoB.lat.toFixed(4)}, ${depoB.lng.toFixed(4)}</span>
+    <button class="pdel" onclick="removeDepo('B')">✕</button>
+  </div>`;
+  el.innerHTML = html;
+}
+
+function removeDepo(which) {
+  if (which==='A') {
+    depoA = null;
+    if (mkDepoA) { mkDepoA.remove(); mkDepoA=null; }
+    document.getElementById('instrB').style.display='none';
+  } else {
+    depoB = null;
+    if (mkDepoB) { mkDepoB.remove(); mkDepoB=null; }
+  }
+  renderDepoList();
+}
+
+async function step2Next() {
+  const err = document.getElementById('err2');
+  if (!depoA || !depoB) { err.classList.add('show'); return; }
+  err.classList.remove('show');
+
+  // Fetch road distances via OSRM
+  document.getElementById('mapBadge').textContent = 'Útvonal számítása…';
+  try {
+    distDepoA = await getRoadDist(depoA, workplace);
+    distDepoB = await getRoadDist(depoB, workplace);
+  } catch(e) {
+    // Fallback: haversine
+    distDepoA = haversine(depoA, workplace);
+    distDepoB = haversine(depoB, workplace);
+  }
+  stops = [];
+  mkStops.forEach(m=>m.remove()); mkStops=[];
+  goStep(3);
+}
+
+// ════════════════════════════════════
+//  STEP 3 — MEGÁLLÓK
+// ════════════════════════════════════
+function placePendingStop(lat, lng) {
+  if (step !== 3) return;
+  if (stops.length >= MAX_STOPS) return;
+  pendingStop = {lat, lng};
+  if (mkPending) mkPending.remove();
+  mkPending = L.marker([lat,lng],{icon:iconPend}).addTo(map)
+    .bindPopup('Add meg a nevét, majd nyomd a + gombot').openPopup();
+  document.getElementById('stopNameInput').focus();
+}
+
+async function addPendingStop() {
+  if (!pendingStop) {
+    alert('Először kattints a megálló helyére a térképen!'); return;
+  }
+  const nev = document.getElementById('stopNameInput').value.trim();
+  if (!nev) { alert('Add meg a megálló nevét!'); return; }
+
+  document.getElementById('mapBadge').textContent = 'Távolság számítása…';
+  let distM;
+  try {
+    distM = await getRoadDist(pendingStop, workplace);
+  } catch(e) {
+    distM = haversine(pendingStop, workplace);
+  }
+
+  const stop = {nev, lat: pendingStop.lat, lng: pendingStop.lng, distM};
+  stops.push(stop);
+
+  if (mkPending) { mkPending.remove(); mkPending=null; }
+  const mk = L.marker([stop.lat, stop.lng],{icon:iconStop})
+    .addTo(map).bindPopup(`${stop.nev}<br>${fmtDist(distM)}`);
+  mkStops.push(mk);
+
+  pendingStop = null;
+  document.getElementById('stopNameInput').value = '';
+  renderStopList();
+  document.getElementById('mapBadge').textContent = 'Kattints egy megállóra';
+}
+
+function renderStopList() {
+  const el = document.getElementById('stopList');
+  if (stops.length===0) { el.innerHTML=''; return; }
+  el.innerHTML = stops.map((s,i)=>`
+    <div class="point-item">
+      <span class="point-dot dot-stop"></span>
+      <span class="pname">${s.nev}</span>
+      <span class="pdist">${fmtDist(s.distM)}</span>
+      <button class="pdel" onclick="removeStop(${i})">✕</button>
+    </div>`).join('');
+}
+
+function removeStop(i) {
+  stops.splice(i,1);
+  if (mkStops[i]) { mkStops[i].remove(); mkStops.splice(i,1); }
+  renderStopList();
+}
+
+function step3Next() {
+  const err = document.getElementById('err3');
+  if (stops.length < 1) { err.classList.add('show'); return; }
+  err.classList.remove('show');
+  buildUtasUI();
+  goStep(4);
+}
+
+// ════════════════════════════════════
+//  STEP 4 — UTASOK
+// ════════════════════════════════════
+function stopOptions() {
+  return stops.map((s,i)=>
+    `<option value="${i}">${s.nev} (${fmtDist(s.distM)})</option>`
+  ).join('');
+}
+
+function buildUtasUI() {
+  const c = document.getElementById('utasContainer');
+  c.innerHTML = '';
+  utasok = [];
+  addUtasRow();
+}
+
+let utasRowCount = 0;
+function addUtasRow() {
+  if (utasRowCount >= MAX_UTAS) return;
+  utasRowCount++;
+  const idx = utasRowCount;
+  const c = document.getElementById('utasContainer');
+  const d = document.createElement('div');
+  d.className = 'utas-row';
+  d.id = 'ur_'+idx;
+  d.style.marginBottom = '.35rem';
+  d.innerHTML = `
+    <span style="font-family:var(--mono);font-size:.7rem;color:var(--muted);width:18px">${idx}.</span>
+    <input type="text" placeholder="Utas neve" id="un_${idx}">
+    <select id="us_${idx}">${stopOptions()}</select>
+    <button style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.95rem" onclick="document.getElementById('ur_${idx}').remove();utasRowCount--">✕</button>
+  `;
+  c.appendChild(d);
+}
+
+function collectUtasok() {
+  utasok = [];
+  document.querySelectorAll('#utasContainer .utas-row').forEach(row => {
+    const idx = row.id.replace('ur_','');
+    const nev = document.getElementById('un_'+idx)?.value.trim();
+    const si  = parseInt(document.getElementById('us_'+idx)?.value);
+    if (nev) utasok.push({nev, stopIdx: si});
+  });
+  return utasok;
+}
+
+async function runOptimize() {
+  collectUtasok();
+  const err = document.getElementById('err4');
+  if (utasok.length < 1) { err.classList.add('show'); return; }
+  err.classList.remove('show');
+
+  document.getElementById('optSpin').style.display='inline-block';
+  document.getElementById('optBtn').disabled = true;
+
+  await new Promise(r=>setTimeout(r,30));
+  optimize();
+
+  document.getElementById('optSpin').style.display='none';
+  document.getElementById('optBtn').disabled = false;
+
+  buildResultUI();
+  goStep(5);
+  drawResultRoutes();
+}
+
+// ════════════════════════════════════
+//  OSRM ROUTING
+// ════════════════════════════════════
+async function getRoadDist(from, to) {
+  const url = `https://router.project-osrm.org/route/v1/driving/`+
+    `${from.lng},${from.lat};${to.lng},${to.lat}?overview=false`;
+  const r = await fetch(url);
+  const d = await r.json();
+  if (d.code !== 'Ok') throw new Error('OSRM error');
+  return d.routes[0].distance; // meters
+}
+
+// Haversine fallback
+function haversine(a, b) {
+  const R = 6371000;
+  const dLat = (b.lat-a.lat)*Math.PI/180;
+  const dLng = (b.lng-a.lng)*Math.PI/180;
+  const x = Math.sin(dLat/2)**2 +
+    Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+// ════════════════════════════════════
+//  OPTIMALIZÁLÁS
+// ════════════════════════════════════
+function calcBusCost(startDist, assignedIdxs) {
+  if (assignedIdxs.length===0) return 0;
+  const stopSet = new Set(assignedIdxs.map(i=>utasok[i].stopIdx));
+  const sorted  = [...stopSet].sort((a,b)=>stops[b].distM - stops[a].distM);
+  let busPos = startDist, busTime = 0, total = 0;
+  for (const si of sorted) {
+    const d = stops[si].distM;
+    busTime += Math.abs(busPos-d)/SPEED_MS;
+    busPos   = d;
+    busTime += STOP_SEC;
+    const rem = d/SPEED_MS;
+    const cnt = assignedIdxs.filter(i=>utasok[i].stopIdx===si).length;
+    total += (busTime+rem)*cnt;
+  }
+  return total;
+}
+
+function optimize() {
+  const n = utasok.length;
+  let best = Infinity;
+  result = new Array(n).fill(0);
+  const assign = new Array(n).fill(0);
+
+  function rec(idx, cA, cB) {
+    if (idx===n) {
+      const idxA=[], idxB=[];
+      for(let i=0;i<n;i++)(assign[i]===0?idxA:idxB).push(i);
+      const cost = calcBusCost(distDepoA,idxA)+calcBusCost(distDepoB,idxB);
+      if (cost<best) { best=cost; result=[...assign]; }
+      return;
+    }
+    if (cA<MAX_CAP) { assign[idx]=0; rec(idx+1,cA+1,cB); }
+    if (cB<MAX_CAP) { assign[idx]=1; rec(idx+1,cA,cB+1); }
+  }
+  rec(0,0,0);
+}
+
+// ════════════════════════════════════
+//  RESULT UI
+// ════════════════════════════════════
+function fmtTime(sec) {
+  const m=Math.floor(sec/60), s=Math.round(sec%60);
+  return `${m}p ${s.toString().padStart(2,'0')}mp`;
+}
+function fmtDist(m) {
+  return m>=1000?(m/1000).toFixed(1)+' km':Math.round(m)+' m';
+}
+
+function buildResultUI() {
+  const idxA = utasok.map((_,i)=>i).filter(i=>result[i]===0);
+  const idxB = utasok.map((_,i)=>i).filter(i=>result[i]===1);
+  const costA = calcBusCost(distDepoA, idxA);
+  const costB = calcBusCost(distDepoB, idxB);
+
+  let html = '';
+
+  // Stats
+  html += `<div class="stat-grid">
+    <div class="stat-box"><div class="sl">A busz</div><div class="sv" style="color:var(--acc)">${idxA.length} fő</div></div>
+    <div class="stat-box"><div class="sl">B busz</div><div class="sv" style="color:var(--acc2)">${idxB.length} fő</div></div>
+    <div class="stat-box"><div class="sl">A össz. idő</div><div class="sv">${fmtTime(costA)}</div></div>
+    <div class="stat-box"><div class="sl">B össz. idő</div><div class="sv">${fmtTime(costB)}</div></div>
+    <div class="stat-box" style="border-color:var(--green)"><div class="sl">Összes idő</div><div class="sv" style="color:var(--green)">${fmtTime(costA+costB)}</div></div>
+  </div>`;
+
+  // Utasok táblázat
+  html += `<div style="font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-top:.3rem">Utasok beosztása</div>
+  <table class="rtable"><thead><tr><th>Név</th><th>Megálló</th><th>Távolság</th><th>Busz</th></tr></thead><tbody>`;
+  utasok.forEach((u,i)=>{
+    const b = result[i]===0?'A':'B';
+    const s = stops[u.stopIdx];
+    html += `<tr><td style="font-weight:500">${u.nev}</td><td>${s.nev}</td>
+      <td style="font-family:var(--mono);font-size:.72rem;color:var(--muted)">${fmtDist(s.distM)}</td>
+      <td><span class="bbadge bbadge-${b}">${b}</span></td></tr>`;
+  });
+  html += `</tbody></table>`;
+
+  // Per-busz útvonal
+  [{letter:'A',idxs:idxA,start:distDepoA,col:'var(--acc)'},{letter:'B',idxs:idxB,start:distDepoB,col:'var(--acc2)'}]
+  .forEach(bd=>{
+    html += `<div style="font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-top:.3rem">${bd.letter} busz menetrend</div>`;
+    if (bd.idxs.length===0) { html+=`<div style="color:var(--muted);font-size:.8rem">Nincs utas.</div>`; return; }
+
+    const stSet = new Set(bd.idxs.map(i=>utasok[i].stopIdx));
+    const sorted=[...stSet].sort((a,b)=>stops[b].distM-stops[a].distM);
+
+    // Route visual
+    html+=`<div class="route-vis"><span class="rs rs-depo${bd.letter==='B'?'B':''}">Depó (${fmtDist(bd.start)})</span>`;
+    sorted.forEach(si=>{ html+=`<span class="rs-arr">→</span><span class="rs">${stops[si].nev}</span>`; });
+    html+=`<span class="rs-arr">→</span><span class="rs rs-work">Munkahely</span></div>`;
+
+    // Stop details
+    let busPos=bd.start, busTime=0;
+    sorted.forEach(si=>{
+      const d=stops[si].distM;
+      const travel=Math.abs(busPos-d)/SPEED_MS;
+      busTime+=travel; busPos=d; busTime+=STOP_SEC;
+      const pax=bd.idxs.filter(i=>utasok[i].stopIdx===si).map(i=>utasok[i].nev);
+      html+=`<div class="stop-detail">
+        <div style="flex:1">
+          <div class="sd-name">${stops[si].nev}</div>
+          <div class="sd-meta">${fmtDist(d)} · +${Math.round(travel/60)} perc menet · megálló: ${STOP_SEC}mp</div>
+          <div class="sd-pax">${pax.join(', ')}</div>
+        </div>
+      </div>`;
+    });
+  });
+
+  document.getElementById('resultScroll').innerHTML = html;
+}
+
+// ════════════════════════════════════
+//  DRAW ROUTES ON MAP
+// ════════════════════════════════════
+let routeLayers = [];
+async function drawResultRoutes() {
+  routeLayers.forEach(l=>l.remove()); routeLayers=[];
+
+  const busInfo = [
+    {idxs: utasok.map((_,i)=>i).filter(i=>result[i]===0), depo:depoA, color:'#5b8dee'},
+    {idxs: utasok.map((_,i)=>i).filter(i=>result[i]===1), depo:depoB, color:'#f0a500'},
+  ];
+
+  for (const bd of busInfo) {
+    if (bd.idxs.length===0) continue;
+    const stSet = new Set(bd.idxs.map(i=>utasok[i].stopIdx));
+    const sorted=[...stSet].sort((a,b)=>stops[b].distM-stops[a].distM);
+
+    // Build waypoints: depo → stops (far to near) → workplace
+    const waypoints = [
+      bd.depo,
+      ...sorted.map(si=>({lat:stops[si].lat,lng:stops[si].lng})),
+      workplace
+    ];
+
+    // Fetch OSRM route geometry
+    try {
+      const coords = waypoints.map(p=>`${p.lng},${p.lat}`).join(';');
+      const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
+      const r = await fetch(url);
+      const d = await r.json();
+      if (d.code==='Ok') {
+        const latlngs = d.routes[0].geometry.coordinates.map(c=>([c[1],c[0]]));
+        const poly = L.polyline(latlngs, {
+          color: bd.color,
+          weight: 4,
+          opacity: .75,
+          dashArray: bd.color==='#f0a500'?'8,4':null
+        }).addTo(map);
+        routeLayers.push(poly);
+      }
+    } catch(e) {
+      // Skip route draw on error
+    }
+  }
+}
+</script>
+</body>
+</html>
